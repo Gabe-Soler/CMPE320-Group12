@@ -1,0 +1,9 @@
+.git
+.gitignore
+docs
+LICENSE
+README.md
+**/node_modules
+Front-End/dist
+Back-End/build
+Back-End/third_party
