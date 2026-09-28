@@ -44,3 +44,16 @@ Activities include, but are not limited to:
 - **Favourites:** users can star their favourite activities
 - **Preference questionnaire:** a quick quiz to gauge the type of activity the user wants to do
 - **Commute awareness:** factor in how the user gets around, including parking and bus routes
+
+## Team
+
+| Role             | Member(s)            |
+|------------------|----------------------|
+| Project Manager  | Austin               |
+| Note Taker       | Austin               |
+| Lead Architect   | Gabe                 |
+| Coders           | Ryan, Lucy, Sophia   |
+| Interface Design | Patrick              |
+| Tester           | Sam                  |
+| Storytelling     | Nathan               |
+| Archivist        | Max                  |
