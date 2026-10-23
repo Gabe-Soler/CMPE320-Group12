@@ -1,1 +1,66 @@
-@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --color-paper: #ffffff;
+  --color-ink: #000000;
+  --color-muted: #000000;
+  --color-cloud: #ffffff;
+  --color-stone: #000000;
+  --color-red: #b8241a;
+  --color-blue: #1a59b8;
+  --color-yellow: #fabd0f;
+  --radius-super: 2.25rem;
+  --shadow-hard: 6px 6px 0 0 #000000;
+  --shadow-hard-sm: 3px 3px 0 0 #000000;
+}
+
+:root {
+  font-family: 'DM Sans', sans-serif;
+  color: var(--color-ink);
+  background: var(--color-paper);
+  font-synthesis: none;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+.display-text,
+.font-black {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.shell {
+  width: min(1180px, calc(100% - 2.5rem));
+  margin-inline: auto;
+}
+
+.gallery-lines {
+  background-image:
+    linear-gradient(135deg, transparent 47%, var(--color-ink) 48%, var(--color-ink) 50%, transparent 51%),
+    linear-gradient(45deg, transparent 47%, var(--color-ink) 48%, var(--color-ink) 50%, transparent 51%);
+  background-size: 72px 72px;
+  opacity: 0.82;
+}
+
+.text-stroke {
+  -webkit-text-stroke: 1px var(--color-ink);
+}
+
+@media (max-width: 640px) {
+  .shell {
+    width: min(100% - 1.5rem, 1180px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
