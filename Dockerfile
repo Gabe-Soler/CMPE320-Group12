@@ -12,14 +12,16 @@ RUN make deps && make build LDFLAGS="-pthread -static-libstdc++ -static-libgcc"
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY --from=server /src/Back-End/build/server /app/server
 COPY --from=web /src/Front-End/dist /app/web
+COPY Back-End/data /app/data
 
 ENV WEB_ROOT=/app/web \
+    DATA_DIR=/app/data \
     PORT=8080
 
 EXPOSE 8080
