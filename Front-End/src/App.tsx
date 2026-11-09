@@ -1,63 +1,9 @@
-import { useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { fetchActivities, fetchLocations, type Activity, type Location } from './api'
 
 type Step = 'home' | 'time' | 'location' | 'results' | 'detail'
 
-type Activity = {
-  name: string
-  category: string
-  place: string
-  duration: number
-  walk: number
-  availability: string
-  description: string
-}
-
-// Placeholder data from the design; will be replaced by the back-end API.
-const activities: Activity[] = [
-  {
-    name: 'Take a gallery lap',
-    category: 'ARTS & CULTURE',
-    place: 'Agnes Etherington',
-    duration: 25,
-    walk: 6,
-    availability: 'Open until 5 PM',
-    description:
-      'Wander through two current exhibitions at your own pace. No booking needed, and admission is free for students.',
-  },
-  {
-    name: 'Shoot some hoops',
-    category: 'GET MOVING',
-    place: 'ARC Main Gym',
-    duration: 30,
-    walk: 4,
-    availability: 'Drop-in until 3 PM',
-    description:
-      'A casual drop-in session with equipment available at the front desk. Bring your student card and indoor shoes.',
-  },
-  {
-    name: 'Walk the waterfront',
-    category: 'FRESH AIR',
-    place: 'Tindall Field',
-    duration: 20,
-    walk: 3,
-    availability: 'Anytime',
-    description:
-      'Follow the short campus loop toward the lake and back. A simple reset with no equipment or planning required.',
-  },
-  {
-    name: 'Quiet reading break',
-    category: 'SLOW DOWN',
-    place: 'Stauffer Library',
-    duration: 15,
-    walk: 7,
-    availability: 'Open now',
-    description:
-      'Find a window seat on the second floor and take a screen-free break with a magazine from the reading shelf.',
-  },
-]
-
 const timeOptions = [15, 30, 45, 60, 90, 120]
-const locationOptions = ['Goodwin Hall', 'Stauffer Library', 'ARC', 'Union Street', 'West Campus', 'Anywhere']
 
 function activate(event: KeyboardEvent<HTMLDivElement>, action: () => void) {
   if (event.key === 'Enter' || event.key === ' ') {
@@ -186,6 +132,7 @@ function Finder({
   step,
   time,
   location,
+  locations,
   onTime,
   onLocation,
   onBack,
@@ -195,6 +142,7 @@ function Finder({
   step: 'time' | 'location'
   time: number
   location: string
+  locations: Location[]
   onTime: (time: number) => void
   onLocation: (location: string) => void
   onBack: () => void
@@ -250,19 +198,22 @@ function Finder({
                   <span>Search campus locations</span>
                 </div>
                 <div className="grid sm:grid-cols-2 gap-3 mt-4">
-                  {locationOptions.map((place) => (
+                  {locations.length === 0 && (
+                    <div className="text-muted">Loading locations…</div>
+                  )}
+                  {locations.map((place) => (
                     <div
                       role="button"
                       tabIndex={0}
-                      key={place}
-                      onClick={() => onLocation(place)}
-                      onKeyDown={(event) => activate(event, () => onLocation(place))}
+                      key={place.id}
+                      onClick={() => onLocation(place.id)}
+                      onKeyDown={(event) => activate(event, () => onLocation(place.id))}
                       className={`cursor-pointer border-2 border-ink rounded-2xl px-5 py-4 flex items-center justify-between font-bold transition-all ${
-                        location === place ? 'bg-blue text-paper shadow-hard-sm -translate-y-1' : 'hover:bg-cloud'
+                        location === place.id ? 'bg-blue text-paper shadow-hard-sm -translate-y-1' : 'hover:bg-cloud'
                       }`}
                     >
-                      <span>{place}</span>
-                      <span className={`size-5 rounded-full border-2 border-ink ${location === place ? 'bg-ink' : ''}`} />
+                      <span>{place.name}</span>
+                      <span className={`size-5 rounded-full border-2 border-ink ${location === place.id ? 'bg-ink' : ''}`} />
                     </div>
                   ))}
                 </div>
@@ -271,7 +222,9 @@ function Finder({
           </div>
           <div className="border-t-2 border-ink bg-cloud px-6 md:px-12 py-5 flex justify-between items-center gap-4">
             <div className="text-sm text-muted">
-              {step === 'time' ? `${time} minutes selected` : location || 'Choose a location'}
+              {step === 'time'
+                ? `${time} minutes selected`
+                : locations.find((place) => place.id === location)?.name ?? 'Choose a location'}
             </div>
             <Action onClick={step === 'time' ? onContinue : onResults} className="min-w-36">
               {step === 'time' ? 'Continue' : 'Find ideas'} <Arrow />
@@ -283,24 +236,62 @@ function Finder({
   )
 }
 
+type Load = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; activities: Activity[] }
+
+function useActivities(time: number, locationId: string): Load {
+  // Each answer is tagged with the search it belongs to, so a new search shows "loading"
+  // until its own answer arrives instead of briefly showing the previous one.
+  const key = `${time}|${locationId}`
+  const [answer, setAnswer] = useState<{ key: string; load: Load } | null>(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchActivities(time, locationId, controller.signal)
+      .then((activities) => setAnswer({ key, load: { status: 'ready', activities } }))
+      .catch((error: Error) => {
+        if (!controller.signal.aborted) setAnswer({ key, load: { status: 'error', message: error.message } })
+      })
+    return () => controller.abort()
+  }, [key, time, locationId])
+
+  return answer?.key === key ? answer.load : { status: 'loading' }
+}
+
 function Results({
   time,
-  location,
+  locationId,
+  locationName,
   onEdit,
   onSelect,
 }: {
   time: number
-  location: string
+  locationId: string
+  locationName: string
   onEdit: () => void
   onSelect: (activity: Activity) => void
 }) {
+  const load = useActivities(time, locationId)
+  const activities = load.status === 'ready' ? load.activities : []
+
   return (
     <main className="flex-1 py-10 md:py-14">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
-          <div className="text-xs font-bold tracking-widest">GOOD NEWS</div>
-          <div className="text-4xl md:text-6xl font-black tracking-tight mt-2">You’ve got options.</div>
-          <p className="text-muted text-lg mt-3">Ranked for your time, distance, and what’s open now.</p>
+          <div className="text-xs font-bold tracking-widest">
+            {load.status === 'ready' && activities.length > 0 ? 'GOOD NEWS' : 'YOUR SEARCH'}
+          </div>
+          <div className="text-4xl md:text-6xl font-black tracking-tight mt-2">
+            {load.status === 'loading' && 'Finding ideas…'}
+            {load.status === 'error' && 'Something went wrong.'}
+            {load.status === 'ready' && (activities.length > 0 ? 'You’ve got options.' : 'Nothing fits right now.')}
+          </div>
+          <p className="text-muted text-lg mt-3">
+            {load.status === 'error'
+              ? `Couldn’t reach the server: ${load.message}`
+              : load.status === 'ready' && activities.length === 0
+                ? 'Try giving yourself more time or picking “Anywhere”.'
+                : 'Ranked for your time, distance, and what’s open now.'}
+          </p>
         </div>
         <Action variant="secondary" onClick={onEdit}>
           Change my search
@@ -312,7 +303,7 @@ function Results({
           <ClockIcon /> {time} minutes
         </div>
         <div className="rounded-full border-2 border-ink px-4 py-2 text-sm font-bold flex gap-2">
-          <PinIcon /> {location}
+          <PinIcon /> {locationName}
         </div>
         <div className="rounded-full border-2 border-ink px-4 py-2 text-sm font-bold">Free</div>
         <div className="rounded-full border-2 border-dashed border-stone px-4 py-2 text-sm font-bold text-muted">
@@ -323,7 +314,7 @@ function Results({
       <div className="grid lg:grid-cols-2 gap-5 mt-8">
         {activities.map((activity, index) => (
           <div
-            key={activity.name}
+            key={activity.id}
             role="button"
             tabIndex={0}
             onClick={() => onSelect(activity)}
@@ -381,9 +372,7 @@ function Detail({ activity, onBack }: { activity: Activity; onBack: () => void }
             <p className="text-lg text-muted leading-relaxed mt-5">{activity.description}</p>
             <div className="border-t-2 border-ink mt-8 pt-7">
               <div className="text-xs tracking-widest font-bold">WHY IT FITS</div>
-              <p className="mt-3 leading-relaxed">
-                This leaves you a comfortable buffer after travel, so you can enjoy it without watching the clock.
-              </p>
+              <p className="mt-3 leading-relaxed">{activity.reason}</p>
             </div>
           </div>
         </div>
@@ -394,9 +383,9 @@ function Detail({ activity, onBack }: { activity: Activity; onBack: () => void }
               <div className="flex gap-3">
                 <ClockIcon />
                 <div>
-                  <div className="font-bold">{activity.duration + activity.walk} minutes total</div>
+                  <div className="font-bold">{activity.total} minutes total</div>
                   <div className="text-sm text-muted">
-                    {activity.duration} min activity · {activity.walk} min walk
+                    {activity.duration} min activity · {activity.walk} min walk each way
                   </div>
                 </div>
               </div>
@@ -422,10 +411,24 @@ function Detail({ activity, onBack }: { activity: Activity; onBack: () => void }
 export default function App() {
   const [step, setStep] = useState<Step>('home')
   const [time, setTime] = useState(45)
-  const [location, setLocation] = useState('Goodwin Hall')
-  const [selected, setSelected] = useState<Activity>(activities[0])
+  const [locations, setLocations] = useState<Location[]>([])
+  const [location, setLocation] = useState('')
+  const [selected, setSelected] = useState<Activity | null>(null)
+
+  // Load the starting points once; preselect the first one.
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchLocations(controller.signal)
+      .then((loaded) => {
+        setLocations(loaded)
+        setLocation((current) => current || loaded[0]?.id || '')
+      })
+      .catch(() => undefined) // the results page reports connection problems
+    return () => controller.abort()
+  }, [])
 
   const goHome = () => setStep('home')
+  const locationName = locations.find((place) => place.id === location)?.name ?? ''
 
   return (
     <div className="min-h-screen bg-paper text-ink flex flex-col">
@@ -446,17 +449,19 @@ export default function App() {
             step={step}
             time={time}
             location={location}
+            locations={locations}
             onTime={setTime}
             onLocation={setLocation}
             onBack={() => setStep(step === 'time' ? 'home' : 'time')}
             onContinue={() => setStep('location')}
-            onResults={() => setStep('results')}
+            onResults={() => location && setStep('results')}
           />
         )}
         {step === 'results' && (
           <Results
             time={time}
-            location={location}
+            locationId={location}
+            locationName={locationName}
             onEdit={() => setStep('time')}
             onSelect={(activity) => {
               setSelected(activity)
@@ -464,7 +469,7 @@ export default function App() {
             }}
           />
         )}
-        {step === 'detail' && <Detail activity={selected} onBack={() => setStep('results')} />}
+        {step === 'detail' && selected && <Detail activity={selected} onBack={() => setStep('results')} />}
       </div>
 
       <footer className="border-t-2 border-ink mt-auto">
