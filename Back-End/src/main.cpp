@@ -1,9 +1,11 @@
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
 #include <string>
 
 #include "api_routes.h"
 #include "crow_all.h"
+#include "data_loader.h"
 #include "static_site.h"
 
 namespace fs = std::filesystem;
@@ -32,6 +34,17 @@ namespace
         CROW_LOG_WARNING << "PORT=\"" << raw << "\" is not a valid port, using 8080";
         return 8080;
     }
+
+    /// Loads one CSV, logging every skipped row so data mistakes are easy to find.
+    template <typename Loader>
+    auto load_logged(const fs::path& file, Loader loader)
+    {
+        auto result = loader(file);
+        for (const auto& warning : result.warnings)
+            CROW_LOG_WARNING << file.filename().string() << " " << warning << " (skipped)";
+        CROW_LOG_INFO << "loaded " << result.items.size() << " rows from " << file;
+        return std::move(result.items);
+    }
 }
 
 int main()
@@ -41,10 +54,27 @@ int main()
     std::error_code ec;
     const fs::path web_root =
       fs::weakly_canonical(env_or("WEB_ROOT", "../Front-End/dist"), ec);
+    const fs::path data_dir = env_or("DATA_DIR", "data");
+
+    // Read the data once at startup; requests only ever read it, so no locking is needed.
+    std::unique_ptr<const bib::AppData> data;
+    try
+    {
+        data = std::make_unique<const bib::AppData>(bib::AppData{
+          bib::Recommender(load_logged(data_dir / "Activities.csv", bib::load_activities)),
+          load_logged(data_dir / "locations.csv", bib::load_locations)});
+    }
+    catch (const std::exception& e)
+    {
+        CROW_LOG_CRITICAL << "could not load data from " << data_dir << ": " << e.what()
+                          << " (set DATA_DIR to the folder holding Activities.csv and locations.csv)";
+        return 1;
+    }
+    CROW_LOG_INFO << data->recommender.activities().size() << " activities are within walking range of campus";
 
     crow::SimpleApp app;
 
-    register_api_routes(app);
+    bib::register_api_routes(app, *data);
     register_static_site(app, web_root);
 
     if (ec || !fs::is_directory(web_root))

@@ -1,0 +1,5 @@
+-xc++
+-std=c++17
+-Ithird_party
+-Ithird_party/asio/include
+-Isrc
