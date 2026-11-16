@@ -54,6 +54,6 @@ Activities include, but are not limited to:
 | Lead Architect   | Gabe                 |
 | Coders           | Ryan, Lucy, Sophia   |
 | Interface Design | Patrick              |
-| Tester           | Sam                  |
+| Tester           | Serhat                  |
 | Storytelling     | Nathan               |
 | Archivist        | Max                  |
