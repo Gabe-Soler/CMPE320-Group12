@@ -150,6 +150,8 @@ describe('freePeriods', () => {
     ])
     expect(gaps[0].fromLocation).toBe('Ellis Hall')
     expect(gaps[0].toLocation).toBe('Kingston Hall')
+    expect(gaps[0].fromTitle).toBe('A')
+    expect(gaps[0].toTitle).toBe('B')
   })
 
   it('merges overlapping and back-to-back classes', () => {

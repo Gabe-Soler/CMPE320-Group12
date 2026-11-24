@@ -382,6 +382,8 @@ export type FreePeriod = {
   toEntryId?: string
   fromLocation?: string
   toLocation?: string
+  fromTitle?: string
+  toTitle?: string
 }
 
 export type StoredSchedule = {
@@ -801,6 +803,10 @@ type Interval = {
   end: number
   entryId: string
   location?: string
+  title?: string
+  endEntryId: string
+  endLocation?: string
+  endTitle?: string
 }
 
 function meetingsOnDate(entries: ScheduleEntry[], date: string): Interval[] {
@@ -814,7 +820,18 @@ function meetingsOnDate(entries: ScheduleEntry[], date: string): Interval[] {
     const start = parseClock(entry.startTime)
     const end = parseClock(entry.endTime)
     if (!start.ok || !end.ok || end.minute <= start.minute) continue
-    intervals.push({ start: start.minute, end: end.minute, entryId: entry.id, location: entry.location?.trim() })
+    const title = entry.title.trim() || undefined
+    const location = entry.location?.trim()
+    intervals.push({
+      start: start.minute,
+      end: end.minute,
+      entryId: entry.id,
+      location,
+      title,
+      endEntryId: entry.id,
+      endLocation: location,
+      endTitle: title,
+    })
   }
   intervals.sort((a, b) => a.start - b.start || a.end - b.end)
   return intervals
@@ -827,8 +844,9 @@ function mergeIntervals(intervals: Interval[]): Interval[] {
     if (last && item.start <= last.end) {
       if (item.end >= last.end) {
         last.end = item.end
-        last.entryId = item.entryId
-        last.location = item.location
+        last.endEntryId = item.endEntryId
+        last.endLocation = item.endLocation
+        last.endTitle = item.endTitle
       }
       continue
     }
@@ -855,10 +873,12 @@ export function freePeriods(entries: ScheduleEntry[], options: FreePeriodOptions
       startMinute: start,
       endMinute: end,
       minutes,
-      fromEntryId: from?.entryId,
+      fromEntryId: from?.endEntryId,
       toEntryId: to?.entryId,
-      fromLocation: from?.location,
+      fromLocation: from?.endLocation,
       toLocation: to?.location,
+      fromTitle: from?.endTitle,
+      toTitle: to?.title,
     })
   }
 

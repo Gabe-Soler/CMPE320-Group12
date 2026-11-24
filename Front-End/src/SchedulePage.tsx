@@ -22,10 +22,27 @@ import {
   saveSchedule,
   scheduleSearchFromGap,
   storageAvailable,
+  type FreePeriod,
   type ScheduleEntry,
 } from './schedule/time'
 
 type Mode = 'home' | 'review' | 'week' | 'form'
+
+function gapDetail(gap: FreePeriod): string {
+  const bits = [`${gap.minutes} min`]
+  if (gap.fromTitle) bits.push(`after ${gap.fromTitle}`)
+  else bits.push('before first class')
+  if (gap.toTitle) bits.push(`before ${gap.toTitle}`)
+  else if (gap.fromTitle) bits.push('after last class')
+  if (gap.fromLocation && gap.toLocation && gap.fromLocation !== gap.toLocation) {
+    bits.push(`${gap.fromLocation} to ${gap.toLocation}`)
+  } else if (gap.toLocation) {
+    bits.push(gap.toLocation)
+  } else if (gap.fromLocation) {
+    bits.push(gap.fromLocation)
+  }
+  return bits.join(' · ')
+}
 
 function activate(event: KeyboardEvent<HTMLElement>, action: () => void) {
   if (event.key === 'Enter' || event.key === ' ') {
@@ -219,7 +236,7 @@ export default function SchedulePage({
     if (!toDirty) setToId(auto.toId)
   }, [pickGap, locations, fromDirty, toDirty])
 
-  const startSearch = (gap: (typeof gaps)[number]) => {
+  const startSearch = (gap: FreePeriod) => {
     const auto = landmarksForFreePeriod(gap, locations)
     setError('')
     setPickGap(gap)
@@ -426,11 +443,7 @@ export default function SchedulePage({
                     <div className="font-black">
                       {clockLabel(gap.startMinute)} – {clockLabel(gap.endMinute)}
                     </div>
-                    <div className="text-sm text-muted">
-                      {gap.minutes} min
-                      {gap.fromLocation ? ` · from ${gap.fromLocation}` : ' · before first class'}
-                      {gap.toLocation ? ` · until ${gap.toLocation}` : ''}
-                    </div>
+                    <div className="text-sm text-muted">{gapDetail(gap)}</div>
                   </div>
                   <Action onClick={() => startSearch(gap)}>Find activities during this break</Action>
                 </div>
