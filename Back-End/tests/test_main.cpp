@@ -100,6 +100,12 @@ namespace
         CHECK(locations.items.size() == 2);
         CHECK(locations.items[0].point.has_value());
         CHECK(!locations.items[1].point.has_value());
+
+        std::istringstream noted("id,name,lat,lng\ndunning-hall,Dunning Hall,44.22780,-76.49650\n");
+        const auto dunning = parse_locations(noted);
+        CHECK(dunning.items.size() == 1);
+        CHECK(dunning.items[0].id == "dunning-hall");
+        CHECK(dunning.items[0].point && dunning.items[0].point->lat > 44.227 && dunning.items[0].point->lat < 44.229);
     }
 
     void test_recommender()
@@ -135,6 +141,55 @@ namespace
         // Tuesday: library closed.
         CHECK(recommender.recommend({60, &stauffer, {20261110, 1, 12 * 60}}).empty());
     }
+
+    void test_schedule_window()
+    {
+        std::istringstream in(kActivities);
+        const Recommender recommender(parse_activities(in).items);
+        const Location stauffer{"stauffer", "Stauffer", GeoPoint{44.22816, -76.49585}};
+        const Location goodwin{"goodwin-hall", "Goodwin", GeoPoint{44.22794, -76.49233}};
+        const LocalTime mondayNoon{20261109, 0, 12 * 60};
+
+        Query q{45, &stauffer, mondayNoon};
+        q.to = &goodwin;
+        q.until = 13 * 60;
+        q.arrivalBuffer = 5;
+        auto fits = recommender.recommend(q);
+        CHECK(fits.size() == 1 && fits[0].activity->name == "Library");
+        CHECK(fits[0].walk == 0);
+        CHECK(fits[0].walkAfter >= 3 && fits[0].walkAfter <= 6);
+        CHECK(fits[0].total == 30 + fits[0].walkAfter);
+
+        // Next class at 12:20 with a 5-minute buffer: 30 min in the library cannot fit.
+        q.until = 12 * 60 + 20;
+        CHECK(recommender.recommend(q).empty());
+
+        // Ordinary search from Goodwin: round-trip walk. Schedule window with no next class: one-way.
+        Query ordinary{60, &goodwin, mondayNoon};
+        auto roundTrip = recommender.recommend(ordinary);
+        CHECK(roundTrip.size() == 1);
+        CHECK(roundTrip[0].walkAfter == roundTrip[0].walk);
+        CHECK(roundTrip[0].total == 30 + 2 * roundTrip[0].walk);
+
+        Query oneWay{60, &goodwin, mondayNoon};
+        oneWay.until = 18 * 60;
+        auto openEnd = recommender.recommend(oneWay);
+        CHECK(openEnd.size() == 1);
+        CHECK(openEnd[0].walkAfter == 0);
+        CHECK(openEnd[0].total == 30 + openEnd[0].walk);
+
+        // A long break before class must still include events later in that window.
+        // Finder "2+ hours" would cap budget at 180 and drop the 1 PM talk.
+        Query beforeClass{6 * 60 + 30, &stauffer, {20261109, 0, 8 * 60}};
+        beforeClass.to = &goodwin;
+        beforeClass.until = 14 * 60 + 30;
+        beforeClass.arrivalBuffer = 5;
+        auto morning = recommender.recommend(beforeClass);
+        bool sawTalkBeforeClass = false;
+        for (const auto& s : morning)
+            if (s.activity->name == "Talk") sawTalkBeforeClass = s.startsAt == 13 * 60;
+        CHECK(sawTalkBeforeClass);
+    }
 }
 
 int main()
@@ -144,6 +199,7 @@ int main()
     test_geo();
     test_loader();
     test_recommender();
+    test_schedule_window();
 
     std::cout << (checks - failures) << "/" << checks << " checks passed\n";
     return failures == 0 ? 0 : 1;

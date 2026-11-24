@@ -26,7 +26,13 @@ namespace bib
         std::string reason(const Suggestion& s)
         {
             std::string out = "About " + std::to_string(s.total) + " min in all: ";
-            if (s.walk > 0) out += std::to_string(s.walk) + " min walk each way, ";
+            if (s.walk > 0 && s.walk == s.walkAfter)
+                out += std::to_string(s.walk) + " min walk each way, ";
+            else
+            {
+                if (s.walk > 0) out += std::to_string(s.walk) + " min walk there, ";
+                if (s.walkAfter > 0) out += std::to_string(s.walkAfter) + " min walk to your next stop, ";
+            }
             if (s.wait > 0) out += std::to_string(s.wait) + " min until it starts, ";
             out += std::to_string(s.activity->duration) + " min there.";
 
@@ -48,6 +54,7 @@ namespace bib
             j["lng"] = a.where.lng;
             j["duration"] = a.duration;
             j["walk"] = s.walk;
+            j["walkAfter"] = s.walkAfter;
             j["wait"] = s.wait;
             j["startsAt"] = clock_24h(s.startsAt);
             j["total"] = s.total;
@@ -84,6 +91,9 @@ namespace bib
         body["query"]["minutes"] = query.minutes;
         body["query"]["location"] = query.from->id;
         body["query"]["time"] = clock_24h(query.now.minute);
+        if (query.to) body["query"]["destination"] = query.to->id;
+        if (query.until) body["query"]["until"] = clock_24h(*query.until);
+        body["query"]["arrivalBuffer"] = query.arrivalBuffer;
         body["activities"] = std::move(list);
         return body;
     }

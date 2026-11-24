@@ -19,20 +19,24 @@ namespace bib
 
     struct Query
     {
-        int minutes;            // how long the user has, including getting back
+        int minutes;            // how long the user has, including getting to the next stop
         const Location* from;   // where they are now
         LocalTime now;
+        const Location* to = nullptr; // next class; null + no until = round trip back to `from`
+        std::optional<Minute> until = std::nullopt; // free-period deadline; with no `to`, one-way (no return walk)
+        int arrivalBuffer = 0;                  // minutes to arrive before `until`
     };
 
     /// One activity that fits, with the plan worked out.
     struct Suggestion
     {
         const Activity* activity;
-        int walk;        // one way, minutes
+        int walk;        // minutes walking to the activity
+        int walkAfter;   // minutes walking to the next class, or back to `from`
         int wait;        // minutes between arriving and starting (events that haven't begun)
         Minute startsAt; // local clock time the user starts the activity
         TimeRange window; // the opening range used
-        int total;       // walk there + wait + activity + walk back
+        int total;       // walk there + wait + activity + walk after
         int budget;      // minutes the user had (after "2+ hours" is expanded)
     };
 

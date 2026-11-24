@@ -1,7 +1,9 @@
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { fetchActivities, fetchLocations, type Activity, type Location } from './api'
+import { fetchActivities, fetchLocations, type Activity, type ActivityQuery, type Location } from './api'
+import SchedulePage, { type ScheduleSearch } from './SchedulePage'
+import { clockLabel, parseClock } from './schedule/time'
 
-type Step = 'home' | 'time' | 'location' | 'results' | 'detail'
+type Step = 'home' | 'time' | 'location' | 'results' | 'detail' | 'schedule'
 
 const timeOptions = [15, 30, 45, 60, 90, 120]
 
@@ -100,7 +102,7 @@ function Progress({ step }: { step: Step }) {
   )
 }
 
-function Home({ onStart }: { onStart: () => void }) {
+function Home({ onStart, onSchedule }: { onStart: () => void; onSchedule: () => void }) {
   return (
     <main className="flex-1 flex items-center justify-center py-16 md:py-24">
       <section className="w-full max-w-4xl text-center">
@@ -119,6 +121,9 @@ function Home({ onStart }: { onStart: () => void }) {
           <Action onClick={onStart} className="text-lg px-8 py-4">
             Find me something to do <Arrow />
           </Action>
+          <Action variant="secondary" onClick={onSchedule} className="text-lg px-8 py-4 hover:!bg-red hover:!text-paper">
+            My Schedule
+          </Action>
           <div className="flex items-center gap-2 text-sm font-medium text-muted">
             <ClockIcon /> Takes less than 30 seconds
           </div>
@@ -133,6 +138,8 @@ function Finder({
   time,
   location,
   locations,
+  locationsStatus,
+  onReloadLocations,
   onTime,
   onLocation,
   onBack,
@@ -143,6 +150,8 @@ function Finder({
   time: number
   location: string
   locations: Location[]
+  locationsStatus: 'loading' | 'ready' | 'error'
+  onReloadLocations: () => void
   onTime: (time: number) => void
   onLocation: (location: string) => void
   onBack: () => void
@@ -198,8 +207,16 @@ function Finder({
                   <span>Search campus locations</span>
                 </div>
                 <div className="grid sm:grid-cols-2 gap-3 mt-4">
-                  {locations.length === 0 && (
+                  {locationsStatus === 'loading' && (
                     <div className="text-muted">Loading locations…</div>
+                  )}
+                  {locationsStatus === 'error' && (
+                    <div className="sm:col-span-2 font-semibold">
+                      Couldn’t reach the server for campus landmarks.
+                      <button type="button" className="ml-2 underline" onClick={onReloadLocations}>
+                        Try again
+                      </button>
+                    </div>
                   )}
                   {locations.map((place) => (
                     <div
@@ -238,40 +255,60 @@ function Finder({
 
 type Load = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; activities: Activity[] }
 
-function useActivities(time: number, locationId: string): Load {
+function useActivities(search: ActivityQuery): Load {
   // Each answer is tagged with the search it belongs to, so a new search shows "loading"
   // until its own answer arrives instead of briefly showing the previous one.
-  const key = `${time}|${locationId}`
+  const key = JSON.stringify(search)
   const [answer, setAnswer] = useState<{ key: string; load: Load } | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
-    fetchActivities(time, locationId, controller.signal)
+    fetchActivities(search.minutes, search.locationId, controller.signal, search)
       .then((activities) => setAnswer({ key, load: { status: 'ready', activities } }))
       .catch((error: Error) => {
         if (!controller.signal.aborted) setAnswer({ key, load: { status: 'error', message: error.message } })
       })
     return () => controller.abort()
-  }, [key, time, locationId])
+  }, [key, search])
 
   return answer?.key === key ? answer.load : { status: 'loading' }
 }
 
+function windowLabel(search: ActivityQuery): string | undefined {
+  if (!search.at || !search.until) return undefined
+  const start = parseClock(search.at.slice(search.at.indexOf('T') + 1), true)
+  const end = parseClock(search.until, true)
+  if (!start.ok || !end.ok) return undefined
+  return `${clockLabel(start.minute)} – ${clockLabel(end.minute)}`
+}
+
+function planTimes(activity: Activity, search: ActivityQuery) {
+  const start = parseClock(activity.startsAt, true)
+  if (!start.ok) return undefined
+  const done = start.minute + activity.duration
+  const atClass = done + (activity.walkAfter ?? 0)
+  return {
+    start: clockLabel(start.minute),
+    done: clockLabel(done),
+    atClass: search.destinationId ? clockLabel(atClass) : undefined,
+  }
+}
+
 function Results({
-  time,
-  locationId,
+  search,
   locationName,
   onEdit,
   onSelect,
 }: {
-  time: number
-  locationId: string
+  search: ActivityQuery
   locationName: string
   onEdit: () => void
   onSelect: (activity: Activity) => void
 }) {
-  const load = useActivities(time, locationId)
+  const load = useActivities(search)
   const activities = load.status === 'ready' ? load.activities : []
+  const time = search.minutes
+  const breakWindow = windowLabel(search)
 
   return (
     <main className="flex-1 py-10 md:py-14">
@@ -290,7 +327,11 @@ function Results({
               ? `Couldn’t reach the server: ${load.message}`
               : load.status === 'ready' && activities.length === 0
                 ? 'Try giving yourself more time or picking “Anywhere”.'
-                : 'Ranked for your time, distance, and what’s open now.'}
+                : search.scheduleAware
+                  ? search.destinationId
+                    ? 'Only ideas that fit this break, including walking time from the activity to class and a 5-minute arrival buffer.'
+                    : 'Only ideas that fit this break. There is no next class, so walking time is one-way — not a return trip.'
+                  : 'Ranked for your time, distance, and what’s open now.'}
           </p>
         </div>
         <Action variant="secondary" onClick={onEdit}>
@@ -300,7 +341,7 @@ function Results({
 
       <div className="flex flex-wrap gap-2 mt-8 pb-7 border-b-2 border-ink">
         <div className="rounded-full bg-ink text-paper px-4 py-2 text-sm font-bold flex gap-2">
-          <ClockIcon /> {time} minutes
+          <ClockIcon /> {breakWindow ?? `${time} minutes`}
         </div>
         <div className="rounded-full border-2 border-ink px-4 py-2 text-sm font-bold flex gap-2">
           <PinIcon /> {locationName}
@@ -312,7 +353,9 @@ function Results({
       </div>
 
       <div className="grid lg:grid-cols-2 gap-5 mt-8">
-        {activities.map((activity, index) => (
+        {activities.map((activity, index) => {
+          const plan = planTimes(activity, search)
+          return (
           <div
             key={activity.id}
             role="button"
@@ -333,6 +376,12 @@ function Results({
             </div>
             <div className="text-2xl font-black mt-6">{activity.name}</div>
             <div className="text-muted mt-2">{activity.description}</div>
+            {plan && (
+              <p className="mt-3 font-semibold">
+                {plan.start} – {plan.done}
+                {plan.atClass ? ` · at class by ${plan.atClass}` : ''}
+              </p>
+            )}
             <div className="grid grid-cols-3 border-t-2 border-ink mt-6 pt-4 text-sm">
               <div>
                 <span className="text-muted">Activity</span>
@@ -348,13 +397,24 @@ function Results({
               </div>
             </div>
           </div>
-        ))}
+          )
+        })}
       </div>
     </main>
   )
 }
 
 function Detail({ activity, onBack }: { activity: Activity; onBack: () => void }) {
+  const start = parseClock(activity.startsAt, true)
+  const plan = start.ok
+    ? {
+        range: `${clockLabel(start.minute)} – ${clockLabel(start.minute + activity.duration)}`,
+        atClass:
+          activity.walkAfter && activity.walkAfter !== activity.walk
+            ? clockLabel(start.minute + activity.duration + activity.walkAfter)
+            : undefined,
+      }
+    : undefined
   return (
     <main className="flex-1 py-10 md:py-14">
       <Action variant="quiet" onClick={onBack} className="w-fit mb-7">
@@ -385,7 +445,13 @@ function Detail({ activity, onBack }: { activity: Activity; onBack: () => void }
                 <div>
                   <div className="font-bold">{activity.total} minutes total</div>
                   <div className="text-sm text-muted">
-                    {activity.duration} min activity · {activity.walk} min walk each way
+                    {plan ? `${plan.range}${plan.atClass ? ` · at class by ${plan.atClass}` : ''}` : activity.availability}
+                  </div>
+                  <div className="text-sm text-muted">
+                    {activity.duration} min activity
+                    {activity.walkAfter !== undefined && activity.walkAfter !== activity.walk
+                      ? ` · ${activity.walk} min there · ${activity.walkAfter} min to class`
+                      : ` · ${activity.walk} min walk each way`}
                   </div>
                 </div>
               </div>
@@ -412,20 +478,35 @@ export default function App() {
   const [step, setStep] = useState<Step>('home')
   const [time, setTime] = useState(45)
   const [locations, setLocations] = useState<Location[]>([])
+  const [locationsStatus, setLocationsStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [location, setLocation] = useState('')
   const [selected, setSelected] = useState<Activity | null>(null)
+  const [search, setSearch] = useState<ActivityQuery>({ minutes: 45, locationId: '' })
+  const [resultsFrom, setResultsFrom] = useState<'finder' | 'schedule'>('finder')
 
-  // Load the starting points once; preselect the first one.
+  const [locationReload, setLocationReload] = useState(0)
+
   useEffect(() => {
+    let cancelled = false
     const controller = new AbortController()
+    const timer = window.setTimeout(() => controller.abort(), 5000)
+    setLocationsStatus('loading')
     fetchLocations(controller.signal)
       .then((loaded) => {
+        if (cancelled) return
         setLocations(loaded)
-        setLocation((current) => current || loaded[0]?.id || '')
+        setLocation((current) => current || loaded.find((place) => place.id !== 'anywhere')?.id || loaded[0]?.id || '')
+        setLocationsStatus('ready')
       })
-      .catch(() => undefined) // the results page reports connection problems
-    return () => controller.abort()
-  }, [])
+      .catch(() => {
+        if (!cancelled) setLocationsStatus('error')
+      })
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [locationReload])
 
   const goHome = () => setStep('home')
   const locationName = locations.find((place) => place.id === location)?.name ?? ''
@@ -435,34 +516,62 @@ export default function App() {
       <header className="border-b-2 border-ink">
         <div className="shell h-20 flex items-center justify-between">
           <Brand onClick={goHome} />
-          <div className="hidden sm:flex items-center gap-3">
-            <div className="text-sm font-semibold text-muted">Made for campus downtime</div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="text-sm font-bold underline-offset-4 hover:underline"
+              onClick={() => setStep('schedule')}
+            >
+              My Schedule
+            </button>
+            <div className="hidden sm:block text-sm font-semibold text-muted">Made for campus downtime</div>
             <div className="size-2 rounded-full bg-red border border-ink" />
           </div>
         </div>
       </header>
 
       <div className="shell flex-1 flex flex-col">
-        {step === 'home' && <Home onStart={() => setStep('time')} />}
+        {step === 'home' && <Home onStart={() => setStep('time')} onSchedule={() => setStep('schedule')} />}
+        {step === 'schedule' && (
+          <SchedulePage
+            locations={locations}
+            locationsStatus={locationsStatus}
+            onReloadLocations={() => setLocationReload((n) => n + 1)}
+            onBack={goHome}
+            onFind={(next: ScheduleSearch) => {
+              setSearch(next)
+              setLocation(next.locationId)
+              setTime(next.minutes)
+              setResultsFrom('schedule')
+              setStep('results')
+            }}
+          />
+        )}
         {(step === 'time' || step === 'location') && (
           <Finder
             step={step}
             time={time}
             location={location}
             locations={locations}
+            locationsStatus={locationsStatus}
+            onReloadLocations={() => setLocationReload((n) => n + 1)}
             onTime={setTime}
             onLocation={setLocation}
             onBack={() => setStep(step === 'time' ? 'home' : 'time')}
             onContinue={() => setStep('location')}
-            onResults={() => location && setStep('results')}
+            onResults={() => {
+              if (!location) return
+              setSearch({ minutes: time, locationId: location })
+              setResultsFrom('finder')
+              setStep('results')
+            }}
           />
         )}
         {step === 'results' && (
           <Results
-            time={time}
-            locationId={location}
-            locationName={locationName}
-            onEdit={() => setStep('time')}
+            search={search}
+            locationName={locations.find((place) => place.id === search.locationId)?.name ?? locationName}
+            onEdit={() => setStep(resultsFrom === 'schedule' ? 'schedule' : 'time')}
             onSelect={(activity) => {
               setSelected(activity)
               setStep('detail')

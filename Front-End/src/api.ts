@@ -4,6 +4,7 @@
 export type Location = {
   id: string
   name: string
+  notes?: string
 }
 
 export type Activity = {
@@ -14,14 +15,25 @@ export type Activity = {
   place: string
   lat: number
   lng: number
-  duration: number // minutes at the activity
-  walk: number // minutes, one way
-  wait: number // minutes between arriving and starting
-  startsAt: string // "HH:MM", 24-hour local time
-  total: number // walk there + wait + activity + walk back
+  duration: number
+  walk: number
+  walkAfter?: number
+  wait: number
+  startsAt: string
+  total: number
   cost: '' | 'free' | '$' | '$$'
-  availability: string // e.g. "Open until 5 PM", "Starts at 7:30 PM"
-  reason: string // "Why it fits" sentence
+  availability: string
+  reason: string
+}
+
+export type ActivityQuery = {
+  minutes: number
+  locationId: string
+  at?: string
+  destinationId?: string
+  until?: string
+  buffer?: number
+  scheduleAware?: boolean
 }
 
 async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -42,8 +54,13 @@ export async function fetchActivities(
   minutes: number,
   locationId: string,
   signal?: AbortSignal,
+  extra: Omit<ActivityQuery, 'minutes' | 'locationId'> = {},
 ): Promise<Activity[]> {
   const params = new URLSearchParams({ minutes: String(minutes), location: locationId })
+  if (extra.at) params.set('at', extra.at)
+  if (extra.destinationId) params.set('destination', extra.destinationId)
+  if (extra.until) params.set('until', extra.until)
+  if (extra.buffer !== undefined) params.set('buffer', String(extra.buffer))
   const body = await getJson<{ activities: Activity[] }>(`/api/activities?${params}`, signal)
   return body.activities
 }
