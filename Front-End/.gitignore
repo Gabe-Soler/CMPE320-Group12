@@ -11,6 +11,12 @@ node_modules
 dist
 dist-ssr
 *.local
+eng.traineddata
+*.bmp
+src/schedule/synth-out/
+src/schedule/fixtures/*.pdf
+public/tesseract/
+public/tessdata/
 
 # Editor directories and files
 .vscode/*

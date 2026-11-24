@@ -6,6 +6,7 @@
 
 #include "json_views.h"
 #include "local_clock.h"
+#include "schedule.h"
 
 namespace bib
 {
@@ -40,7 +41,33 @@ namespace bib
             return it == locations.end() ? nullptr : &*it;
         }
 
-        /// GET /api/activities?minutes=45&location=goodwin-hall[&at=2026-11-13T19:00]
+        std::optional<int> parse_buffer(const char* text)
+        {
+            if (text == nullptr || *text == '\0') return 0;
+            int value = 0;
+            const std::string_view s(text);
+            const auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), value);
+            if (ec != std::errc{} || ptr != s.data() + s.size() || value < 0 || value > 60)
+                return std::nullopt;
+            return value;
+        }
+
+        std::optional<Minute> parse_until(const char* text, const LocalTime& now)
+        {
+            if (text == nullptr || *text == '\0') return std::nullopt;
+            const std::string_view s(text);
+            if (s.size() == 16 && s[10] == 'T')
+            {
+                const auto parsed = parse_local_datetime(s);
+                if (!parsed || parsed->date != now.date) return Minute{-1}; // signal invalid
+                return parsed->minute;
+            }
+            const auto clock = parse_clock(s);
+            if (!clock) return Minute{-1};
+            return *clock;
+        }
+
+        /// GET /api/activities?minutes=45&location=goodwin-hall[&at=...][&destination=][&until=][&buffer=]
         crow::response handle_activities(const AppData& data, const crow::request& req)
         {
             const auto minutes = parse_minutes(req.url_params.get("minutes"));
@@ -58,7 +85,33 @@ namespace bib
                 now = *parsed;
             }
 
-            const Query query{*minutes, from, now};
+            Query query{*minutes, from, now};
+
+            if (const char* dest = req.url_params.get("destination"))
+            {
+                query.to = find_location(data.locations, dest);
+                if (query.to == nullptr)
+                    return error(crow::status::BAD_REQUEST, "unknown destination; see /api/locations");
+                if (!query.to->point)
+                    return error(crow::status::BAD_REQUEST,
+                                 "destination must be a mapped campus landmark, not Anywhere");
+            }
+
+            const auto buffer = parse_buffer(req.url_params.get("buffer"));
+            if (!buffer) return error(crow::status::BAD_REQUEST, "buffer must be a whole number from 0 to 60");
+            query.arrivalBuffer = *buffer;
+
+            if (req.url_params.get("until"))
+            {
+                const auto until = parse_until(req.url_params.get("until"), now);
+                if (!until || *until < 0)
+                    return error(crow::status::BAD_REQUEST,
+                                 "until must be HH:MM or YYYY-MM-DDTHH:MM on the same day as the search");
+                if (*until <= now.minute)
+                    return error(crow::status::BAD_REQUEST, "until must be later the same day than the start time");
+                query.until = *until;
+            }
+
             return crow::response(activities_json(query, data.recommender.recommend(query)));
         }
     }

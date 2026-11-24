@@ -26,28 +26,47 @@ namespace bib
 
     std::optional<Suggestion> Recommender::evaluate(const Activity& activity, const Query& query, int budget) const
     {
-        const int walk = query.from->point ? walk_minutes(*query.from->point, activity.where) : 0;
-        if (2 * walk + activity.duration > budget) return std::nullopt; // cheap check before scanning hours
+        const int walkThere = query.from->point ? walk_minutes(*query.from->point, activity.where) : 0;
+        // Ordinary search (no until, no destination): round trip. Next-class destination: walk there.
+        // Free period with no next class (until set, to null): one-way — do not invent a return walk.
+        const int walkAfter = (query.to && query.to->point) ? walk_minutes(activity.where, *query.to->point)
+                           : query.until                    ? 0
+                                                            : walkThere;
+        if (walkThere + activity.duration + walkAfter > budget) return std::nullopt;
 
-        const Minute arrive = query.now.minute + walk;
+        Minute latestArrival = query.now.minute + budget;
+        if (query.until)
+        {
+            const Minute deadline = *query.until - query.arrivalBuffer;
+            if (deadline < latestArrival) latestArrival = deadline;
+        }
+        if (latestArrival <= query.now.minute) return std::nullopt;
+
+        const Minute arrive = query.now.minute + walkThere;
         for (const TimeRange& range : activity.schedule.ranges_on(query.now.date, query.now.weekday))
         {
             // Start as soon as we arrive, or wait for it to open; it must still be open when we finish.
             const Minute start = std::max(arrive, range.start);
             if (start + activity.duration > range.end) continue;
 
-            const int total = (start - query.now.minute) + activity.duration + walk;
+            const Minute doneAtNext = start + activity.duration + walkAfter;
+            if (doneAtNext > latestArrival) continue;
+
+            const int total = (start - query.now.minute) + activity.duration + walkAfter;
             if (total > budget) continue;
 
             // Ranges are in time order, so the first that fits is the earliest start.
-            return Suggestion{&activity, walk, start - arrive, start, range, total, budget};
+            return Suggestion{&activity, walkThere, walkAfter, start - arrive, start, range, total, budget};
         }
         return std::nullopt;
     }
 
     std::vector<Suggestion> Recommender::recommend(const Query& query) const
     {
-        const int budget = query.minutes >= config_.openEndedFrom ? config_.openEndedBudget : query.minutes;
+        // Finder "2+ hours" is open-ended. A schedule break has a real `until`, so use the gap as-is.
+        const int budget = (!query.until && query.minutes >= config_.openEndedFrom)
+                               ? config_.openEndedBudget
+                               : query.minutes;
 
         std::vector<Suggestion> fits;
         for (const Activity& activity : activities_)
