@@ -455,8 +455,9 @@ export function confidenceOf(warnings: ExtractionWarning[]): Confidence {
 export function normalizeEntry(entry: ScheduleEntry): ScheduleEntry {
   const parsed = parseCourse(entry.title)
   const courseCode = entry.courseCode?.trim() || parsed.courseCode
-  const start = entry.startTime ? parseClock(entry.startTime) : undefined
-  const end = entry.endTime ? parseClock(entry.endTime) : undefined
+  // Review fields are labeled HH:MM, so "9:30" is 09:30. Bare OCR text still refuses a one-digit hour.
+  const start = entry.startTime ? parseClock(entry.startTime, true) : undefined
+  const end = entry.endTime ? parseClock(entry.endTime, true) : undefined
   const next: ScheduleEntry = {
     ...entry,
     title: entry.title.trim(),

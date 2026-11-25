@@ -191,8 +191,9 @@ export default function SchedulePage({
   }
 
   const confirmDraft = () => {
-    const ready = draft.filter((entry) => isComplete(entry))
-    const leftover = draft.filter((entry) => !isComplete(entry))
+    const normalized = draft.map((entry) => normalizeEntry(entry))
+    const ready = normalized.filter((entry) => isComplete(entry))
+    const leftover = normalized.filter((entry) => !isComplete(entry))
     if (!ready.length) {
       setError(
         leftover.length
@@ -570,71 +571,72 @@ function EntryCard({
   onChange: (entry: ScheduleEntry) => void
   onDelete: () => void
 }) {
-  const complete = isComplete(entry)
+  const shown = normalizeEntry(entry)
+  const complete = isComplete(shown)
   const needsReview =
     !complete ||
-    entry.warnings.includes('grid-time') ||
-    entry.warnings.includes('ocr-mismatch') ||
-    entry.confidence !== 'high'
+    shown.warnings.includes('grid-time') ||
+    shown.warnings.includes('ocr-mismatch') ||
+    shown.confidence !== 'high'
   return (
     <div className={`border-2 border-ink rounded-3xl p-5 ${needsReview ? 'bg-yellow' : 'bg-paper'}`}>
       <div className="flex justify-between gap-3">
-        <div className="text-xs tracking-widest font-bold">{needsReview ? 'NEEDS REVIEW' : entry.confidence.toUpperCase()}</div>
+        <div className="text-xs tracking-widest font-bold">{needsReview ? 'NEEDS REVIEW' : shown.confidence.toUpperCase()}</div>
         <button type="button" className="font-bold underline" onClick={onDelete}>
           Delete
         </button>
       </div>
-      {entry.cropDataUrl && (
-        <img src={entry.cropDataUrl} alt="Original class block from the timetable" className="mt-4 max-h-40 border-2 border-ink rounded-2xl bg-paper" />
+      {shown.cropDataUrl && (
+        <img src={shown.cropDataUrl} alt="Original class block from the timetable" className="mt-4 max-h-40 border-2 border-ink rounded-2xl bg-paper" />
       )}
       <div className="grid sm:grid-cols-2 gap-3 mt-4">
-        <Field label="Title" value={entry.title} onChange={(title) => onChange(normalizeEntry({ ...entry, title }))} />
+        <Field label="Title" value={shown.title} onChange={(title) => onChange(normalizeEntry({ ...shown, title }))} />
         <Field
           label="Course code"
-          value={entry.courseCode ?? ''}
-          warn={!entry.courseCode}
-          onChange={(courseCode) => onChange(normalizeEntry({ ...entry, courseCode: courseCode || undefined, title: courseCode || entry.title }))}
+          value={shown.courseCode ?? ''}
+          warn={!shown.courseCode}
+          onChange={(courseCode) => onChange(normalizeEntry({ ...shown, courseCode: courseCode || undefined, title: courseCode || shown.title }))}
         />
-        <Field label="Section" value={entry.section ?? ''} onChange={(section) => onChange(normalizeEntry({ ...entry, section }))} />
-        <Field label="Class type" value={entry.component ?? ''} onChange={(component) => onChange(normalizeEntry({ ...entry, component }))} />
-        <Field label="Location" value={entry.location ?? ''} onChange={(location) => onChange(normalizeEntry({ ...entry, location }))} />
+        <Field label="Section" value={shown.section ?? ''} onChange={(section) => onChange(normalizeEntry({ ...shown, section }))} />
+        <Field label="Class type" value={shown.component ?? ''} onChange={(component) => onChange(normalizeEntry({ ...shown, component }))} />
+        <Field label="Location" value={shown.location ?? ''} onChange={(location) => onChange(normalizeEntry({ ...shown, location }))} />
         <Field
           label="Start (HH:MM)"
-          value={entry.startTime}
-          warn={entry.warnings.includes('grid-time') || entry.warnings.includes('ocr-mismatch') || !entry.startTime}
+          value={shown.startTime}
+          warn={shown.warnings.includes('grid-time') || shown.warnings.includes('ocr-mismatch') || !shown.startTime}
           onChange={(startTime) =>
             onChange(
               normalizeEntry({
-                ...entry,
+                ...shown,
                 startTime,
-                warnings: entry.warnings.filter((code) => code !== 'grid-time' && code !== 'ocr-mismatch'),
+                warnings: shown.warnings.filter((code) => code !== 'grid-time' && code !== 'ocr-mismatch'),
               }),
             )
           }
         />
         <Field
           label="End (HH:MM)"
-          value={entry.endTime}
-          warn={entry.warnings.includes('grid-time') || entry.warnings.includes('ocr-mismatch') || !entry.endTime}
+          value={shown.endTime}
+          warn={shown.warnings.includes('grid-time') || shown.warnings.includes('ocr-mismatch') || !shown.endTime}
           onChange={(endTime) =>
             onChange(
               normalizeEntry({
-                ...entry,
+                ...shown,
                 endTime,
-                warnings: entry.warnings.filter((code) => code !== 'grid-time' && code !== 'ocr-mismatch'),
+                warnings: shown.warnings.filter((code) => code !== 'grid-time' && code !== 'ocr-mismatch'),
               }),
             )
           }
         />
         <Field
           label="Date YYYY-MM-DD"
-          value={entry.startDate ?? ''}
-          onChange={(startDate) => onChange(normalizeEntry({ ...entry, startDate: startDate || undefined, endDate: startDate || undefined }))}
+          value={shown.startDate ?? ''}
+          onChange={(startDate) => onChange(normalizeEntry({ ...shown, startDate: startDate || undefined, endDate: startDate || undefined }))}
         />
       </div>
-      <DayPicker days={entry.days} onChange={(days) => onChange(normalizeEntry({ ...entry, days }))} />
-      {entry.warnings.length > 0 && (
-        <p className="text-sm mt-3">{entry.warnings.map(warningLabel).join(' · ')}</p>
+      <DayPicker days={shown.days} onChange={(days) => onChange(normalizeEntry({ ...shown, days }))} />
+      {shown.warnings.length > 0 && (
+        <p className="text-sm mt-3">{shown.warnings.map(warningLabel).join(' · ')}</p>
       )}
     </div>
   )

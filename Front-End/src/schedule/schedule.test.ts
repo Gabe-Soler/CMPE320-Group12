@@ -226,6 +226,20 @@ describe('validation and Kingston time', () => {
   it('blocks incomplete entries from being confirmed', () => {
     expect(isComplete({ title: 'X', days: [], startTime: '09:00', endTime: '10:00' })).toBe(false)
     expect(isComplete({ title: 'X', days: [0], startTime: '9:30', endTime: '10:30' })).toBe(false)
+    const typed = normalizeEntry(
+      cls({
+        days: [1],
+        startTime: '9:30',
+        endTime: '10:30',
+        title: 'CISC 324 · Lecture',
+        courseCode: 'CISC 324',
+        location: 'Biosciences Complex 1102',
+      }),
+    )
+    expect(typed.startTime).toBe('09:30')
+    expect(typed.endTime).toBe('10:30')
+    expect(typed.warnings).not.toContain('ambiguous-ampm')
+    expect(isComplete(typed)).toBe(true)
     expect(isComplete({ title: 'X', days: [0], startTime: '09:00', endTime: '08:00' })).toBe(false)
     expect(isComplete({ title: 'CISC 320', days: [0], startTime: '09:30', endTime: '11:30' })).toBe(true)
   })
